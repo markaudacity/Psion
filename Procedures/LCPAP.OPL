@@ -1,5 +1,6 @@
 LCPAP:
-rem LCPAP sleep tracker
+rem CPAP settings sleep tracker
+rem CC BY-NC-SA markaudacity 2023-
 rem v2.4
 
 local m%,ap%,m$(1),pak$(1),note$(100),p$(5),c$(1),h$(1)
