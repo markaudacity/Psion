@@ -14,3 +14,9 @@ Inner and outer labels for Datapaks. I haven't had a chance to print these out y
 ![Psion Organiser Datapak outer label](https://github.com/markaudacity/Psion/blob/7e62eee8892eaa2b4b31c1370c909374f05eec0e/Pak%20labels/Datapak_label.png)
  
 ![Psion Organiser EPROM window label](https://github.com/markaudacity/Psion/blob/7e62eee8892eaa2b4b31c1370c909374f05eec0e/Pak%20labels/Datapak_note_sticker.png)
+
+## Procedures
+- **LCPAP** - sleep tracker with settings for CPAP machine, stores entries in data file
+- **RLE$** - RLE encoder
+- **RLD$** - RLE decoder
+- **TPRINT** - proc to print variable and pause for debugging
