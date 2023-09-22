@@ -1,0 +1,23 @@
+RLE$:(in$)
+local n%,r%,c$(1),o$(255)
+print "input:",in$
+n%=1
+while n%<= len(in$)
+ c$=mid$(in$,n%,1)
+rem tprint$:(c$)
+ n%=n%+1
+ r%=1
+ while c$=mid$(in$,n%,1) and r%<127
+  r%=r%+1
+  n%=n%+1
+ endwh
+ if r%<3
+  o$=o$+rept$(c$,r%)
+rem  tprint$:(o$)
+ else
+  o$=o$+chr$(128+r%)+c$
+rem  tprint$:(o$)
+ endif
+endwh
+return "output: "+o$
+

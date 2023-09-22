@@ -1,0 +1,139 @@
+LCPAP:
+rem LCPAP sleep tracker
+rem v2.4
+
+local m%,ap%,m$(1),pak$(1),note$(100),p$(5),c$(1),h$(1)
+splash::
+banner35:(1,15,"CPAP Tracker v2.33")
+open "a:main",b,id$,stdate$,pak$,format$
+m%=find("LCPAPset")
+if m%<>0
+ position m%
+else
+ firstrun::
+  banner35:(1,10,"FIRST RUN SETUP")
+  b.id$="LCPAPset"
+  b.stdate$=sdate$:(1)
+  cls
+  banner35:(1,0,"Select Datapak to  store records")
+  m%=menun(1,"B:,C:")
+  if m%=1
+   b.pak$="B"
+  else
+   b.pak$="C"
+  endif
+  append
+endif
+pak$=b.pak$
+close
+if dirw$(pak$+":sleep.odb")<>""
+ open pak$+":sleep",a,rec%,date$,notep$,notea$,p,c%,h%
+else
+ crfile::
+ banner35:(1,5,"Creating file...")
+ create pak$+":sleep",a,rec%,date$,notep$,notea$,p,c%,h%
+ print "...done."
+ pause 5
+endif
+last
+
+menu::
+ cls
+ banner35:(1,0,"Main Menu")
+ M%=MENUN(1,"ENTER,VIEW,PREF,QUIT")
+ if m%=1
+  CLS
+  banner35:(1,0,"Select type")
+  m%=menun(1,"Sleep,Wake")
+  if m%=2
+   goto entrya::
+  else
+   goto entryp::
+  endif
+ elseif m%=4
+  goto quit::
+ else
+  print "not implemented"
+  pause 10
+  m%=0
+  goto menu::
+ endif
+
+entrya::
+ ap%=2
+ cls
+ banner35:(1,0,"Morning Notes")
+ at 1,3 :print "Enter sleep notes:"
+ at 1,4 :input note$ 
+ a.notea$=note$
+ cls
+ print "Record",a.rec%
+ pause 10
+ at 1,2 :print a.notea$
+ print
+ goto save::
+
+entryp::
+ ap%=1
+ p$=gen$(a.p,4)
+ c$=gen$(a.c%,1)
+ h$=gen$(a.h%,1)
+ a.rec%=a.rec%+1
+ PRINT "Pressure:     cmH2O"
+ print "CFlex:"
+ at 9,2:print "Humidifier:"
+ print "Notes:"
+ at 10,1 :edit p$ rem input A.P
+ at 7,2 :edit c$ rem input A.C%
+ at 20,3 :edit h$ rem input A.H%
+ input a.notep$
+ cls 
+ PRINT "Record #:",A.REC%
+ pause 10
+ PRINT "Pressure:",p$;"cmH2O"
+ PRINT "C-Flex:",c$
+ PRINT "Humidifier:",h$
+ PRINT a.notep$
+ print
+
+save::
+ at 1,4
+ M%=MENUN(1,"Save,Correct,Quit")
+ IF M%=2
+  if ap%=2
+   GOTO entrya::
+  else
+   goto entryp::
+  endif
+ ELSEIF M%=3
+  GOTO QUIT::
+ endif
+
+write::
+ CLS
+ banner35:(1,0,"!! Write Datapak? !!")
+ M%=MENUN(1,"YES,NO")
+ if m%=1
+  a.date$=sdate$:(2)
+  CLS
+  BANNER:("Writing Datapak...",1)
+  if ap%=1
+   a.notea$=""
+   append
+  elseif ap%=2
+   update
+  endif
+  at 1,4 :print "Record logged!"
+  pause 25
+  GOTO MENU::
+ ELSE
+  A.REC%=A.REC%-1
+  GOTO MENU::
+ ENDIF
+
+quit::
+ close
+ print "Quitting..."
+ pause 15
+ stop
+

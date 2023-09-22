@@ -1,0 +1,4 @@
+tprint:(x%)
+print x%
+pause -15
+

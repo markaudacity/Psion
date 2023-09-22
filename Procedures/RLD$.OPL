@@ -1,0 +1,15 @@
+rld$:(in$)
+local n%,c$(1),o$(255)
+n%=1
+while n%<=len(in$)
+ c$=mid$(in$,n%,1)
+ n%=n%+1
+ if asc(c$)>128
+  o$=o$+rept$(mid$(in$,n%,1),asc(c$)-128)
+  n%=n%+1
+ else
+  o$=o$+c$
+ endif
+endwh
+return o$
+
