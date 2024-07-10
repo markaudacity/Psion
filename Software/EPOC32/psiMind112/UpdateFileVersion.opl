@@ -1,0 +1,101 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+PROC Test:
+	LOCAL pw%
+	
+	pw% = PleaseWait%:("Test")
+	GET
+	gCLOSE pw%
+	
+ENDP
+
+PROC UpdateFileVersion:
+	LOCAL f$(255), tf$(255), pw%
+
+	f$ = fname$
+	tf$ = "C:\psiMind.temp"
+
+	CreateFile:(tf$)
+	
+	pw% = PleaseWait%:("Updating current file to latest version")
+	
+	BUSY "Created new file"
+	
+	REM Delete standard root record
+	USE A	:	ERASE
+	
+	REM Copy items table
+	OPENR """" + f$ + """ SELECT * FROM items", Z, id&, parent&, title$, flags%
+	BUSY "Opened existing items table"
+	WHILE NOT EOF
+		IF Z.id& > 0
+			USE A
+				BUSY "Copying item " + GEN$(Z.id&, 10)
+				INSERT
+				A.id& = Z.id&
+				A.parent& = Z.parent&
+				A.title$ = Z.title$
+				A.flags% = Z.flags%
+				PUT
+		ENDIF
+		USE Z
+			NEXT
+	ENDWH
+	BUSY "Done copying items"
+	USE Z	:	CLOSE
+	BUSY "Closed items table"
+	
+	REM Copy data table
+	OPEN """" + tf$ + """ SELECT * FROM data", B, id&, type$, data$
+	BUSY "Opened new file data table"
+	OPENR """" + f$ + """ SELECT * FROM data", Z, id&, type$, data$
+	BUSY "Opened existing file data table"
+	WHILE NOT EOF
+		USE B
+			BUSY "Copying data record " + GEN$(Z.id&, 3)
+			INSERT
+			B.id& = Z.id&
+			B.type$ = Z.type$
+			B.data$ = Z.data$
+			PUT
+		USE Z
+			NEXT
+	ENDWH
+	USE Z	:	CLOSE
+	USE B	:	CLOSE
+	BUSY "Done upgrading file"
+	
+	CloseFile:
+	
+	COPY f$, f$ + ".bak"
+	COPY tf$, f$
+	
+	gCLOSE pw%
+	
+	OpenFile:(f$)
+	
+	BUSY OFF
+	
+ENDP
+
+PROC PleaseWait%:(s$)
+	LOCAL i%, w%, h%
+	
+	w% = gWIDTH * 0.8
+	h% = gHEIGHT / 2
+	
+	i% = gCREATE((gWIDTH - w%)/2, (gHEIGHT - h%)/2, w%, h%, 1, $412)
+	gBORDER $003
+	gAT 5, gHEIGHT - 10
+	gPRINTB "Please wait", w% - 10, 1
+	gAT 5, 20
+	gPRINT "Working..."	
+
+	gSTYLE 1
+	gAT 5, h% / 2
+	gPRINTB s$, w% - 10, 3
+	
+	return i%
+ENDP

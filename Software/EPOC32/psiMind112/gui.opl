@@ -1,0 +1,190 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+PROC ViewItem:
+	LOCAL wid%
+	LOCAL note$(255), i%
+	
+	wid% = gCREATE(10, 10, gWIDTH - 20, gHEIGHT - 20, 1)
+	Goto_id%:(mainitem&, -1)
+	
+	gAT 0, fontheight% - fontdescent%
+	gSTYLE 1
+	gPRINTB A.title$, gWIDTH, 2
+	gAT 0, fontheight%
+	gLINEBY gWIDTH, 0
+	
+	Note$ = GetOptData$:(mainitem&, "Note")
+	gAT 0, fontheight% * 2
+	gSTYLE 0	
+	i% = 0
+	WHILE i% < LEN(Note$)
+		i%++
+		IF (LOC(" ,.!""", MID$(Note$, i%, 1))) AND (gY > (0.8 * gWIDTH))
+			gPRINT MID$(Note$, i%, 1)
+			gAT 0, gY + fontheight%
+		ELSEIF MID$(Note$, i%, 1) = CHR$(6)
+			gAT 0, gY + fontheight%
+			gPRINT "*"
+		ELSE
+			gPRINT MID$(Note$, i%, 1)
+		ENDIF
+	ENDWH
+	
+	BUSY "Press a key"
+	GET
+	gCLOSE wid%
+	BUSY OFF
+ENDP
+
+PROC DrawDB:
+	LOCAL cX%, cY%, x%, y%, i%, items%, step%
+	LOCAL mainTitle$(255), mainParent&, mainFlags%
+	LOCAL subitems%, subx%, suby%, ang%, step2%
+	LOCAL j%, k%, w$(255)
+
+	gui_counter% = 0
+	
+	cX% = gWIDTH / 2
+	cY% = gHEIGHT / 2
+
+	IF mainitem& = 0
+		mainitem& = 1
+	ENDIF
+	
+	REM Get main item
+	Goto_id%:(mainitem&, -1)
+	mainTitle$ = A.title$
+	mainParent& = A.Parent&
+	mainFlags% = A.flags%
+		
+	REM Get and draw child items
+	w$ = """" + fname$ + """ SELECT * FROM items WHERE "
+	w$ = w$ + "id=" + GEN$(mainParent&, 20) + " "
+	w$ = w$ + "OR parent=" + GEN$(mainitem&, 20)
+	IF FileHasIndex%
+		w$ = w$ + " ORDER BY id"
+	ENDIF
+	OPEN w$, B, id&, parent&, title$, flags%
+	LAST
+	items% = COUNT
+	IF items% > 0
+		IF (items% = 5) OR (items% = 7)
+			i% = -75
+		ELSEIF (items% = 8)
+			i% = -60
+		ELSEIF (items% = 9)
+			i% = -90
+		ELSE
+			i% = -70
+		ENDIF
+		step% = (360 / items%)
+	
+		IF items% > 0
+			FIRST
+			WHILE NOT EOF				REM First ring of items
+	
+				x% = SIN(RAD(i%)) * (gWIDTH / 6)
+				y% = COS(RAD(i%)) * (gHEIGHT / 4)
+			
+				gAT cX%, cY%
+				gLINEBY x%, -y%				
+			
+				REM Draw sub children
+				w$ = """" + fname$ + """ SELECT * FROM items WHERE "
+				w$ = w$ + "parent=" + GEN$(B.id&, 20) + " "
+				IF B.parent& > 0
+					w$ = w$ + "OR id=" + GEN$(B.parent&, 20) + ""
+				ENDIF
+				OPEN w$, C, id&, parent&, title$, flags%
+				LAST
+				subitems% = COUNT
+				IF COUNT > 1
+					subitems% = COUNT
+					IF step% < 180
+						step2% = step% / subitems%
+					ELSE
+						step2% = 180 / subitems%
+					ENDIF
+					ang% = i% - (step2% / 2)
+					ZoomTo:(zoomlevel% - 2)
+					FIRST
+					WHILE NOT EOF				REM Second ring of items
+						IF C.id& <> mainitem&
+							subx% = cx% + x% + SIN(RAD(ang%)) * (gWIDTH / 5)
+							suby% = cy% - y% - COS(RAD(ang%)) * ((gHEIGHT / 3) - fontheight%)
+							gAT cx% + x%, cy% - y%
+							gLINETO subx%, suby%
+						
+							REM Draw sub sub links
+							j% = NumberChildren%:(C.id&)
+							k% = ang% - (j% * 2)
+							WHILE j% > 0
+								gAT subx%, suby%
+								gLINEBY SIN(RAD(k%)) * (gWIDTH / 2), -COS(RAD(k%)) * gHEIGHT
+								k% = k% + 4
+								j%--
+							ENDWH
+							DrawText:(subx%, suby%, C.title$, C.id&, C.flags%)
+							ang% = ang% + step2%
+						ENDIF
+						USE C	:	NEXT
+					ENDWH
+				ENDIF
+				USE C	:	CLOSE
+			
+				ZoomTo:(zoomlevel% - 1)
+				DrawText:(cX% + x%, cY% - y%, B.title$, B.id&, B.flags%)
+				
+				USE B :	NEXT
+				i% = i% + step%
+			ENDWH
+		ENDIF
+	ENDIF		REM There where some children to draw
+	USE B	:	CLOSE
+	
+	REM Draw main item over the link lines
+	ZoomTo:(zoomlevel%)
+	DrawText:(cX%, cY%, mainTitle$, mainItem&, mainFlags%)
+	
+ENDP
+
+PROC DrawText:(x%, y%, title$, id&, flags%)
+	LOCAL xs%, xa%, ya%, s$(50), style%
+	
+	s$ = title$
+
+	IF GetBit%:(flags%, Khas_link%)		REM Has attached file
+		s$ = s$ + "+"
+	ENDIF
+	
+	style% = 0
+	IF (id& = mainitem&) OR (id& = 1)
+		style% = 1					REM Bold
+	ENDIF
+	IF GetBit%:(flags%, Khas_note%)
+		style% = style% + 2	REM Underline
+	ENDIF
+	
+	gSTYLE style%
+	
+	xs% = gTWIDTH(s$)
+	xa% = x% - (xs% / 2)
+	ya% = y% + (fontheight% / 2) - fontdescent%
+
+	gAT xa%, ya%	
+	gPRINTB s$, xs%, 3
+
+	gui_counter%++
+	gui_id&(gui_counter%) = id&
+	gui_x1%(gui_counter%) = xa% - 2
+	gui_y1%(gui_counter%) = y% - (fontheight% / 2) - 2
+	gui_x2%(gui_counter%) = xa% + xs% + 4
+	gui_y2%(gui_counter%) = y% + (fontheight% / 2) + 4
+
+REM Draw box around touch snesitive area
+REM	gAT gui_x1%(gui_counter%), gui_y1%(gui_counter%)
+REM	gBOX gui_x2%(gui_counter%) - gui_x1%(gui_counter%), gui_y2%(gui_counter%) - gui_y1%(gui_counter%)
+	
+ENDP

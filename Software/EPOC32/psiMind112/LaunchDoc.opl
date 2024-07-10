@@ -1,0 +1,149 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+REM LaunchDoc 1.0
+REM =============
+REM
+REM This is the OPL Code to run another application by giving
+REM just a filename for the document to be opened.
+REM If the file is already open then the said file/application
+REM will be brought to the foreground, else the application
+REM will be opened with the given file.
+REM Works for the buil-in apps and third party spplications too.
+REM
+REM Usage
+REM =====
+REM
+REM LaunchDoc: does not create any errors, it just returns True
+REM if the document was successfully launched, and False if it
+REM wasn't.
+REM
+REM LauncDoc: requires the "System.opx" to be loaded, this is done
+REM by added the following line to your code before the first Proc
+REM definition:
+REM
+REM		INCLUDE "System.oxh"
+REM
+REM Sample code:
+REM
+REM		IF LaunchDoc:("C:\Documents\Data")
+REM			Print "Your data file has been opened"
+REM		ELSE
+REM			Print "Your data file could not be opened"
+REM		ENDIF
+REM
+
+PROC LaunchDocAndWait:(doc$)
+	LOCAL uid&, prev&
+	IF LaunchDoc:(doc$)
+		PAUSE 40
+		BUSY "Waiting for " + doc$ + " to close"
+		KEY
+		DO
+			PAUSE 5
+			ONERR ErrExit
+			prev& = 0
+			uid& = GETTHREADIDFROMOPENDOC&:(doc$, prev&)
+			ONERR OFF
+		UNTIL KEY <> 0
+		ErrExit::
+		SETFOREGROUND:
+	ELSE
+		RETURN 0
+	ENDIF
+	BUSY OFF
+	RETURN -1
+ENDP
+
+PROC LaunchDoc:(doc$)
+	LOCAL uid&, prev&, app$(255)
+	
+	REM Check if doc$ is already running
+	ONERR ErrDoesNotExist
+	prev& = 0
+	uid& = GETTHREADIDFROMOPENDOC&:(doc$, prev&)
+	ONERR OFF
+	prev& = 0
+	SETFOREGROUNDBYTHREAD&:(uid&, prev&)
+	RETURN -1
+	
+ErrDoesNotExist::
+	ONERR OFF
+	uid& = getUid&:(doc$, 2)
+	IF uid&	= KUidOplDoc&
+		uid& = getUid&:(doc$, 3)
+		app$ = AppPath$:(uid&)
+		IF app$ <> ""
+			ONERR ErrRunApp
+			RunApp&:("OPL", doc$, "R""" + app$ + """", 2)
+			ONERR OFF
+			RETURN -1
+		ELSE
+			gIPRINT "Could not find application for given document"
+		ENDIF
+	ELSEIF uid& = &1000006D			REM C++ app
+		ONERR ErrRunApp
+		RunApp&:("", doc$, "", 0)
+		ONERR OFF
+		RETURN -1
+	ELSE												REM ????
+	gIPRINT "Not supported for that type of file"
+	ENDIF
+	
+ErrRunApp::
+	ONERR OFF
+	RETURN 0
+ENDP
+
+PROC AppPath$:(uid&)
+	LOCAL adir$(255), name$(255), a%, drive$(4), off%(6)
+	
+	drive$ = "CDEZ"
+	a% = 1
+	WHILE a% <= 4								REM For each drive
+		ONERR nextdrive::
+		adir$ = DIR$(mid$(drive$,a%,1)+":\System\Apps\*")
+		ONERR off
+		WHILE 1										REM For each directory
+			IF adir$ = ""
+				BREAK
+			ELSE
+				PARSE$(adir$, "", off%())
+				name$ = adir$ + "\" + MID$(adir$, off%(4), 255) + ".APP"
+				IF EXIST(name$)
+					IF uid& = getUid&:(name$, 3)
+						RETURN name$
+					ENDIF
+				ENDIF
+			ENDIF
+			adir$ = DIR$("")
+		ENDWH
+		nextdrive::
+		ONERR off
+		a%++
+	ENDWH
+	RETURN ""
+ENDP
+
+PROC getUid&:(file$, idindex%)
+	LOCAL handle%, ret%
+	LOCAL data$(16), addr%, uid&
+
+	IF (LEN(file$) < 3) OR (idindex% < 1) OR (idindex% > 4)
+		RETURN 0
+	ENDIF
+
+	ret% = IOOPEN(handle%, file$, $400)
+	IF ret% < 0
+		RETURN 0
+	ENDIF
+
+	ret% = IOREAD(handle%, addr(data$), 16)
+	IOCLOSE(handle%)
+	IF ret% <> 16
+		RETURN 0
+	ENDIF
+	
+	RETURN PEEKL(UADD(ADDR(data$), (idindex% * 4) - 4))
+ENDP

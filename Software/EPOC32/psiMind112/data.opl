@@ -1,0 +1,331 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+PROC MergeIn:(n$, id&)
+	REM WIP!
+ENDP
+
+PROC GetOptData$:(id&, type$)
+	LOCAL n$(255)
+	
+	OPEN """" + fname$ + """ SELECT * FROM data WHERE id=" + GEN$(id&, 10) + " AND type='" + type$ + "'", D, id&, type$, data$
+	IF COUNT = 1
+		n$ = D.data$
+	ENDIF
+	CLOSE
+	RETURN n$
+ENDP
+
+PROC SetOptData:(id&, type$, data$)
+	OPEN """" + fname$ + """ SELECT * FROM data WHERE id=" + GEN$(id&, 10) + " AND type='" + type$ + "'", D, id&, type$, data$
+	IF EOF
+		IF data$ = ""
+			CLOSE
+			RETURN
+		ELSE
+			INSERT
+			D.id& = id&
+			D.type$ = type$
+		ENDIF
+	ELSE
+		IF data$ = ""
+			ERASE
+			CLOSE
+			RETURN
+		ELSE
+			MODIFY
+		ENDIF
+	ENDIF
+	D.data$ = data$
+	PUT
+	CLOSE
+ENDP
+
+PROC MoveItems:(fromitem&, toitem&)
+	REM First check is a legal move
+	REM It's illegal if toitem& is fromitem or any of of children
+	
+	IF pCheckChildren%:(fromitem&, toitem&)
+		gIPRINT "You cannot move an item to itself or its own branch!"
+	ELSE
+		REM Move the item.....
+		Goto_id%:(fromitem&, -1)
+		MODIFY
+		A.parent& = toitem&
+		PUT
+		REM Update position and screen
+		mainitem& = toitem&
+		UpdateScreen:
+	ENDIF
+ENDP
+
+PROC pCheckChildren%:(id&, checkid&)
+	REM Private recursively call proc
+	LOCAL bm%
+
+	IF id& = checkid&
+		RETURN -1
+	ENDIF
+	IF Goto_parent%:(id&, -1)
+		DO
+			bm% = BOOKMARK
+			IF pCheckChildren%:(A.id&, checkid&)
+				RETURN -1
+			ENDIF
+			USE A
+			GOTOMARK bm%
+			KILLMARK bm%
+			NEXT
+		UNTIL NOT Goto_parent%:(id&, 0)	
+	ENDIF
+ENDP
+
+PROC exportHTMLcallback:(indent%, s$, note$)
+	LOCAL tab$(30)
+
+	IF indent% > 0
+		tab$ = REPT$(CHR$(9), indent%)
+	ENDIF
+	LPRINT tab$ + "<li>" + s$
+	IF note$ <> ""
+rem		LPRINT tab$ + note$
+	ENDIF
+ENDP
+
+PROC exportcallback:(indent%, s$, note$)
+	LOCAL tab$(30)
+	
+	IF indent% > 0
+		tab$ = REPT$(CHR$(9), indent%)
+	ENDIF
+	LPRINT tab$ + s$
+	IF note$ <> ""
+		LPRINT tab$ + note$
+	ENDIF
+ENDP
+
+PROC printcallback:(indent%, s$, note$)
+	PrintItem:(indent%, s$, note$)	
+ENDP
+
+PROC PrintItem:(indent%, text$, note$)
+	LOCAL ni%
+	
+	PrintParagraph:(text$, indent%, KTrue%, GetBit%:(prefflag%, Kprinttitlebold%), KFalse%, KFalse%, KFalse%, 0.5)
+	IF note$ <> ""
+		IF indent% > 0
+			ni% = indent% + 1
+		ENDIF
+		PrintParagraph:(note$, ni%, KFalse%, KFalse%, KFalse%, KTrue%, KFalse%, 0)
+	ENDIF
+ENDP
+
+PROC PrintParagraph:(s$, leftmargin%, keepwithnext%, bold%, underline%, italic%, centered%, spacebefore)
+	REM leftmargin% in tabs
+	LOCAL left%, fontsize%, tabsize%, horz%, before%
+	
+	fontsize% = ((prefflag% AND 3) * 2) + 8
+
+	tabsize% = 40 * fontsize%
+	left% = leftmargin% * tabsize%
+	before% = spacebefore * fontsize% * 20
+	
+	IF centered%
+		horz% = KPrintCenterAlign%
+	ELSE
+		horz% = KPrintJustifiedAlign%
+	ENDIF
+	
+	InitialiseParaFormat:(255, 255, 255, left%, 0, 0, horz%, KPrintTopAlign%, fontsize% * 20, KLineSpacingAtLeastInTwips%, before%, 0, KTrue%, keepwithnext%, KFalse%, KTrue%, KTrue%, 0, tabsize%)
+	SetFontHeight:(fontsize% * 20)
+	IF bold%
+		SetFontWeight:(1)
+	ELSE
+		SetFontWeight:(0)
+	ENDIF
+	IF italic%
+		SetFontPosture:(1)
+	ELSE
+		SetFontPosture:(0)
+	ENDIF
+	IF underline%
+		SetFontUnderline:(1)
+	ELSE
+		SetFontUnderline:(0)
+	ENDIF
+	
+	SetLocalParaFormat:
+	SendStringToPrinter:(s$)
+	SendNewParaToPrinter:
+	
+ENDP
+
+PROC ExportToPrinter:
+	pPrintChildren:(&1, 0, "", "printcallback")
+ENDP
+
+PROC ExportAsText:(n$, id&)
+	TRAP DELETE n$
+	LOPEN n$
+	BUSY "Exporting to text file"
+	IF ExportFormat% = 5	REM HTML
+		LPRINT "<HTML><TITLE>psiMind</TITLE>"
+		LPRINT "<BODY><H1>psiMind</H1>"
+		LPRINT "<ul>"
+		pPrintChildren:(id&, 1, "", "exportHTMLcallback")
+		LPRINT "</ul>"
+		LPRINT "</BODY></HTML>"
+	ELSE
+		pPrintChildren:(id&, 0, "", "exportcallback")
+	ENDIF
+	LCLOSE
+	BUSY OFF
+ENDP
+
+PROC pPrintChildren:(id&, indent%, number$, callproc$)
+	LOCAL bm%, p$(255), c%, tab$(30)
+
+	Goto_id%:(id&, -1)
+
+	IF number$ <> ""
+		p$ = p$ + number$ + CHR$(9)
+	ENDIF
+	p$ = p$ + A.title$
+	
+	@(callproc$):(indent%, p$, GetOptData$:(id&, "Note"))
+	
+	IF Goto_parent%:(id&, -1)
+		DO
+			c%++
+			bm% = BOOKMARK
+			IF ExportFormat% = 2					REM Numbered
+				p$ = number$ + GEN$(c%, 5) + "."
+			ELSEIF ExportFormat% = 3			REM Numbered/Letter
+				IF (indent% AND 1) = 0	REM Odd indent
+					p$ = number$ + GEN$(c%, 5) + "."
+				ELSE
+					p$ = number$ + CHR$(c% + 64) + "."
+				ENDIF
+			ELSEIF ExportFormat% = 4			REM Roman
+				p$ = number$ + AsRoman$:(c%) + "."
+			ELSEIF ExportFormat% = 5			REM HTML
+				p$ = ""
+				IF indent% > 0
+					tab$ = REPT$(CHR$(9), indent%)
+				ENDIF
+				LPRINT tab$ + "<ul>"
+			ELSE													REM Plain
+				p$ = ""
+			ENDIF
+			
+			pPrintChildren:(A.id&, indent% + 1, p$, callproc$)
+			
+			IF ExportFormat% = 5			REM HTML
+				LPRINT tab$ + "</ul>"
+			ENDIF
+			USE A
+			GOTOMARK bm%
+			KILLMARK bm%
+			NEXT
+		UNTIL NOT Goto_parent%:(id&, 0)
+	ENDIF
+ENDP
+
+PROC AsRoman$:(i%)
+	REM Returns the given number in Roman numerals
+	REM i% must be less than 1000
+	REM K.Golding 3/5/01
+	LOCAL i$(10), ret$(20), t$(20), c%
+
+	i$ = RIGHT$("000" + GEN$(i%, 3), 3)
+	IF MID$(i$, 1, 1) <> "0"
+		t$ = MID$("   C  CC CCC  CD   D  DC DCCDCCC  CM", (VAL(MID$(i$, 1, 1)) * 4) - 4, 4)
+	ENDIF
+	IF MID$(i$, 2, 1) <> "0"
+		t$ = t$ + MID$("   X  XX XXX  XL   L  LX LXXLXXX  XC", (VAL(MID$(i$, 2, 1)) * 4) - 4, 4)
+	ENDIF
+	IF MID$(i$, 3, 1) <> "0"
+		t$ = t$ + MID$("   I  II III  IV   V  VI VIIVIII  IX", (VAL(MID$(i$, 3, 1)) * 4) - 3, 4)
+	ENDIF
+	
+	REM Now remove extra spaces
+	c% = LEN(t$)
+	ret$ = ""
+	WHILE c% > 0
+		IF MID$(t$, c%, 1) <> " "
+			ret$ = ret$ + MID$(t$, c%, 1)
+		ENDIF
+		c%--
+	ENDWH
+	
+	RETURN ret$
+ENDP
+
+PROC DeleteAll:(deleteid&)
+	REM Deletes given item and all it's children
+	
+	BEGINTRANS	
+	pDeleteChildren:(deleteid&)
+	Goto_id%:(deleteid&, -1)
+	ERASE
+	COMMITTRANS
+ENDP
+
+PROC pDeleteChildren:(deleteid&)
+	REM Private recursively call proc
+	LOCAL temp&
+	
+	WHILE Goto_parent%:(deleteid&, -1)
+		temp& = A.id&
+		ERASE
+
+		rem Delete optional data
+		OPEN """" + fname$ + """ SELECT * FROM data WHERE id=" + GEN$(deleteid&, 10), D, id&, type$, data$
+		WHILE NOT EOF
+			ERASE
+		ENDWH
+		CLOSE
+		
+		pDeleteChildren:(temp&)
+	ENDWH
+	
+ENDP
+
+PROC Goto_parent%:(id&, first%)
+	USE A
+	IF first%
+		FIRST
+	ENDIF
+	WHILE NOT EOF
+		IF A.parent& = id&
+			RETURN -1
+		ENDIF
+		NEXT
+	ENDWH
+	RETURN 0
+ENDP
+
+PROC Goto_id%:(id&, first%)
+	USE A
+	IF first%
+		FIRST
+	ENDIF
+	WHILE NOT EOF
+		IF A.id& = id&
+			RETURN -1
+		ENDIF
+		NEXT
+	ENDWH
+	RETURN 0
+ENDP
+
+PROC NumberChildren%:(id&)
+	LOCAL c%
+	REM Returns number of childen for given item id
+	
+	OPEN """" + fname$ + """ SELECT parent FROM items WHERE parent=" + GEN$(id&, 20), Z, parent&
+	c% = COUNT
+	CLOSE
+	RETURN c%
+ENDP

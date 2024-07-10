@@ -1,0 +1,142 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+REM SpellCheck 1.01
+REM ===============
+REM
+REM Description
+REM ===========
+REM
+REM This is the OPL Code to allow an OPL application use of the
+REM builtin spell checker.
+REM
+REM Usage
+REM =====
+REM
+REM SpellCheck$: requires the "Spell.opx" to be loaded, this is done
+REM by added the following line to your code before the first Proc
+REM definition:
+REM
+REM		INCLUDE "Spell.oxh"
+REM
+REM Sample code:
+REM
+REM		text$ = SpellCheck$:(text$)
+REM
+
+PROC SpellCheck$:(s$)
+	REM Call using text$ = SpellCheck$:(text$)
+	
+	LOCAL w$(30), checked$(255), tocheck$(255)
+	LOCAL alt%, d%, wordpos%, wordlen%
+	
+	IF s$ = ""
+		RETURN ""
+	ENDIF
+	
+	BUSY "Checking spelling...", 1, 1
+	OpenSpeller:(SpellUserDict&:)
+	tocheck$ = s$
+	WHILE 1
+		w$ = Spell$:(tocheck$)
+		IF w$ = ""
+			checked$ = checked$ + tocheck$
+			BREAK
+		ELSE
+			wordpos% = SpellWhere&:
+			wordlen% = LEN(w$)
+			dINIT "Unrecognised word """ + w$ + """"
+			dBUTTONS "Stop", -27, "Skip", 32, "Correct", 13
+			d% = DIALOG
+			IF d% = 32
+				checked$ = checked$ + LEFT$(tocheck$, wordpos% + wordlen%)
+				IF LEN(tocheck$) <= wordpos% + wordlen%
+					tocheck$ = ""
+				ELSE
+					tocheck$ = MID$(tocheck$, wordpos% + wordlen% + 1, 255)
+				ENDIF
+			ELSEIF d% = 13
+				alt% = 1
+				SpellAlt$ = ""
+				SpellAlternatives:(w$, &100, "SpellAltCallBack")
+
+				dINIT "Spell: Correcting a word "
+				dTEXT "Word to correct:", w$
+				IF SpellAlt$ <> ""
+					dCHOICE alt%, "Suggestions", SpellAlt$
+					dBUTTONS "Cancel", -27, "Enter own", %u + 512, "Correct", 13
+				ELSE
+					dTEXT "Suggestions", "None"
+					dEDIT w$, "Replace with", 20
+					dBUTTONS "Cancel", -27, "Correct", 13
+				ENDIF
+				d% = DIALOG
+				IF d% = %u
+					dINIT "Spell: Correcting a word"
+					dTEXT "Replace", w$
+					dEDIT w$, "With", 20
+					dBUTTONS "Cancel", -27, "OK", 13
+					IF DIALOG
+						checked$ = checked$ + LEFT$(tocheck$, wordpos% - 1) + w$
+						IF LEN(w$) = LEN(tocheck$)
+							tocheck$ = ""
+						ELSE
+							tocheck$ = MID$(tocheck$, wordpos% + wordlen%, 255)
+						ENDIF
+					ENDIF
+				ELSEIF d% = 13
+					IF SpellAlt$ <> ""
+						w$ = ChoiceItem$:(SpellAlt$, alt%)
+					ENDIF
+					checked$ = checked$ + LEFT$(tocheck$, wordpos% - 1) + w$
+					IF LEN(w$) = LEN(tocheck$)
+						tocheck$ = ""
+					ELSE
+						tocheck$ = MID$(tocheck$, wordpos% + wordlen%, 255)
+					ENDIF
+				ENDIF
+			ELSE
+				checked$ = checked$ + tocheck$
+				BREAK
+			ENDIF
+		ENDIF
+	ENDWH
+	CloseSpeller:
+	BUSY OFF
+	RETURN checked$
+ENDP
+
+PROC SpellAltCallBack&:(alt$)
+	IF LEN(SpellAlt$) + LEN(alt$) < 250
+		IF SpellAlt$ = ""
+			SpellAlt$ = alt$
+		ELSE
+			SpellAlt$ = SpellAlt$ + "," + alt$
+		ENDIF
+		RETURN &0
+	ELSE
+		RETURN &1
+	ENDIF
+ENDP
+
+PROC ChoiceItem$:(choices$, index%)
+	LOCAL t%, p%, c%, l%
+	
+	c% = 1
+	p% = 0
+	WHILE c% < index%
+		t% = LOC(MID$(choices$, p% + 1, 255), ",")
+		IF t%
+			p% = p% + t%
+		ELSE
+			BREAK
+		ENDIF
+		c% = c% + 1
+	ENDWH
+	l% = LOC(MID$(choices$, p% + 1, 255), ",") - 1
+	IF l% = -1
+		l% = 255
+	ENDIF
+	RETURN MID$(choices$, p% + 1, l%)
+ENDP

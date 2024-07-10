@@ -1,0 +1,1252 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM
+REM This program is free software; you can redistribute it and/or modify
+REM it under the terms of the GNU General Public Licence as published
+REM by the Free Software Foundation; either version 2 of the Licence,
+REM or (at your option) any later version.
+REM 
+REM This program is distributed in the hope that it will be useful, but
+REM WITHOUT ANY WARRANTY; without even the implied warranty of
+REM MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+REM See the GNU General Public Licence for more details
+REM (www.gnu.org/licenses/gpl.txt).
+		
+REM DEFINES
+REM undef SPELL to compile for revo version
+#DEFINE SPELL
+rem #UNDEF SPELL
+
+#IFDEF SPELL
+INCLUDE "Spell.oxh"
+#ENDIF
+
+REM Consts
+CONST KUidAppFrame& = &100041BD
+#define KtitleLength 50
+	
+APP psiMind, KUidAppFrame&
+	FLAGS 1											REM Can create files
+	ICON "pM24.mbm"
+	ICON "pM24m.mbm"
+	ICON "pM36.mbm"
+	ICON "pM36m.mbm"
+	ICON "pM48.mbm"
+	ICON "pM48m.mbm"
+ENDA
+
+INCLUDE "Const.oph"
+INCLUDE "System.oxh"
+INCLUDE "Printer.oxh"
+INCLUDE "Dbase.oxh"
+
+CONST KAppName$ = "psiMind"									REM Stick to one word upto 8 chars
+CONST Kcontact$ = "kgolding@cix.co.uk" 				REM Contact details
+rem CONST KcopyRight$ = "© K.Golding 2000-2002"			REM Copyright details
+CONST Kprogramversion$ = "1.13gpl"						REM Program version
+	
+CONST Kzoommax% = 7						REM Maximum levels of zoom
+CONST KcmdN$ = "noemtk"				REM Commands New/Open/Exit/Zoom/Toolbar/Prefs
+CONST KcmdS$ = "amzh"					REM Commands About/Zoom/Help
+CONST KblankbitmapWidth% = 5	REM Width of blank bitmap
+
+CONST Kmax_children% = 120		REM Maximum number of children displayed per item
+CONST Kuser_children% = 10		REM Maximum number of children the user can add per item
+
+CONST Khas_link% = 1					REM item flags
+CONST Khas_note% = 2
+
+CONST Kspellcheck% = 3				REM Preference flags
+CONST Kprinttitlebold% = 4
+CONST Kprintfontsize% = 1	REM & 2
+CONST Kquickdataentry% = 5
+
+PROC Start:
+	DEFAULTWIN 1								REM Set default window to 4 colour mode
+	gIPRINT "Loading " + KAppName$
+	LOADM "Z:\System\OPL\Toolbar.opo"
+	tBarLink:("Main")
+ENDP
+	
+PROC Main:
+	GLOBAL ev&(16), minit%			REM Current event, last menu item selected
+	GLOBAL redraw%							REM Set to false to prevent screen redraws whilst init.
+	GLOBAL cmdN$(26), cmdS$(26)	REM command keys allowed
+	GLOBAL fullscreenwidth%			REM Static, machines default width
+	GLOBAL fullscreenheight%		REM Static, machines default height
+	GLOBAL maxwidth%						REM maximum width after toolbar
+	GLOBAL exit%								REM Set True to exit program
+	GLOBAL fopen%							REM True if data file open
+	GLOBAL fname$(255)					REM Current opened file name
+	GLOBAL zoomlevel%					REM Current zoom level (1 to Kzoommax%)
+	GLOBAL zoomfont&(Kzoommax%)	REM Zoom font ID
+	GLOBAL fontheight%					REM Height of current zoom font
+	GLOBAL fontdescent%				REM Descent of current zoom font
+	GLOBAL blankbitmap&				REM Blank bitmap for toolbar
+	GLOBAL prefflag%					REM preferences flag	
+	GLOBAL username$(30)			REM Registered user name	
+	GLOBAL regcode&						REM Registered code
+	GLOBAL PlainBackground%
+	GLOBAL mainitem&						REM Main/centre item
+	GLOBAL markedItem&					REM Last item marked via Cut/Copy
+	GLOBAL SpellAlt$(255)				REM For Spell Checker
+	GLOBAL findtext$(20)				REM User text to search for
+	GLOBAL gui_id&(Kmax_children%)	REM gui database of items diplayed
+	GLOBAL gui_x1%(Kmax_children%)
+	GLOBAL gui_y1%(Kmax_children%)
+	GLOBAL gui_x2%(Kmax_children%)
+	GLOBAL gui_y2%(Kmax_children%)
+	GLOBAL gui_lastid&
+	GLOBAL gui_counter%
+	GLOBAL ExportFormat%				REM Export as ext format option
+	GLOBAL FindStatus%
+	GLOBAL FileHasIndex%
+	
+	Initialize:											REM Setup defaults, read ini settings & draw screen
+	
+	SystemEvent:(CMD$(3) + CMD$(2))
+
+	DoSetCmd:												REM Set up available user commands
+	
+	AppRun:													REM Call event handling loop
+	
+	WriteIniFile:										REM Save ini file settings
+	CloseFile:											REM Close users file
+ENDP
+	
+PROC DrawScreen:
+	IF NOT redraw% :RETURN :ENDIF
+	gUSE 1														REM Use default screen
+	gUPDATE OFF
+	gSETWIN 0, 0, MaxWidth%, fullscreenheight%
+	gCLS
+			
+	UpdateToolBar:
+	UpdateScreen:
+	gUPDATE ON
+ENDP
+	
+PROC UpdateScreen:
+	LOCAL background%
+
+	IF PlainBackground%
+		gUSE 1
+		gCLS
+	ELSE
+		background% = gLOADBIT("z:\system\data\eikon.mbm", 0, 0)
+		gUSE 1
+		gAT 0, 0
+		gPATT background%, gWidth, gHeight, 3
+		gBOX gWIDTH, gHEIGHT
+		gCLOSE background%
+	ENDIF
+	
+	gUSE 1
+	
+	IF fopen%
+		DrawDB:
+	ELSE
+		rem No file open
+	ENDIF
+ENDP
+	
+PROC UpdateToolBar:
+	LOCAL off%(6)
+	IF fopen%
+		PARSE$("*.*", fname$, off%())
+		tBarSetTitle:(MID$(fname$, off%(4), 8))
+	ELSE
+		tBarSetTitle:(KAppName$)
+	ENDIF
+ENDP
+	
+PROC AppPrint:								REM Print using print.opx
+	BUSY "Printing...", 1, 2
+	RESETPRINTING:
+
+	ExportToPrinter:
+
+	BUSY OFF
+ENDP
+
+PROC CmdL%:											REM Launch attached file %l
+	LOCAL n$(255)
+	IF NotAllowed%:(%l) :RETURN :ENDIF
+	
+	Goto_id%:(mainitem&, -1)
+	IF GetBit%:(A.flags%, Khas_link%)
+		OPEN """" + fname$ + """ SELECT * FROM data WHERE id=" + GEN$(mainitem&, 10) + " AND type='FileLink'", B, id&, type$, data$
+		n$ = B.data$
+		CLOSE
+		IF EXIST(n$)
+			LaunchDocAndWait:(n$)
+REM			LaunchDoc:(n$)
+		ELSE
+			gIPRINT "The attached file no longer exists!"
+			CmdSL%:
+		ENDIF
+	ELSE
+		CmdSL%:
+	ENDIF
+	
+ENDP
+
+PROC CmdSL%:											REM Attach File %L
+	LOCAL n$(255), d%
+	IF NotAllowed%:(%L) :RETURN :ENDIF
+	
+	Goto_id%:(mainitem&, -1)
+	IF GetBit%:(A.flags%, Khas_link%)
+		n$ = GetOptData$:(mainitem&, "FileLink")
+	ENDIF
+	
+	dINIT "Attach/link external file"
+	dFILE n$, "File,Folder,Disk", 0
+	IF GetBit%:(A.flags%, Khas_link%)
+		dBUTTONS "Cancel", -27, "Link to item", 13, "Remove link", %r
+	ELSE
+		dBUTTONS "Cancel", -27, "Link to item", 13
+	ENDIF
+	d% = DIALOG
+	IF d% = %r
+		REM Remove flag
+		USE A
+		MODIFY
+		A.flags% = SetBit%:(A.flags%, Khas_link%, 0)
+		PUT
+		UpdateScreen:
+	ELSEIF d% = 13
+		REM set flag
+		USE A
+		MODIFY
+		A.flags% = SetBit%:(A.flags%, Khas_link%, 1)
+		PUT
+		
+		REM Add file name to option data table
+		SetOptData:(mainitem&, "FileLink", n$)
+
+		UpdateScreen:
+	ENDIF
+ENDP
+
+PROC CmdSI%:										REM File/Info %i
+	IF NotAllowed%:(%I) :RETURN :ENDIF
+	
+	USE A	:	LAST
+	dINIT "File Information"
+	dTEXT "Name:", fname$
+	dTEXT "Records:", GEN$(COUNT, 10)
+	dTEXT "Indexed:", GetOptData$:(&0, "Indexed")
+	dTEXT "Created by:", GetOptData$:(&0, "ProgVer")
+	dBUTTONS "OK", 13, "Update File Version", 9
+	IF DIALOG = 9
+		UpdateFileVersion:
+	ENDIF
+ENDP
+
+PROC CmdE%:										REM File/Exit %e
+	exit% = KTrue%
+ENDP
+
+PROC CmdF%:										REM Edit/Find %f
+	IF NotAllowed%:(%f) :RETURN :ENDIF
+	
+	dINIT "Find"
+	dEDIT findtext$, "Search for", 20
+	dBUTTONS "Cancel", -27, "Find", 13
+	IF DIALOG = 13
+		USE A	:	FIRST
+		DoFind:
+	ENDIF
+ENDP
+
+PROC DoFind:
+	USE A
+	IF FIND("*" + findtext$ + "*")
+		gui_lastid& = mainitem&
+		mainitem& = A.id&
+		UpdateScreen:
+		gIPRINT "Found - Use Ctrl-J to find next"
+		FindStatus% = 1
+	ELSE
+		BEEP 5, 300
+		gIPRINT "Not found"
+		FindStatus% = 0
+	ENDIF	
+ENDP
+
+PROC CmdJ%:										REM Edit/Find Next %j
+	IF NotAllowed%:(%j) :RETURN :ENDIF
+	IF FindStatus% = 1
+		Goto_id%:(mainitem&, -1)
+		NEXT
+	ELSE
+		USE A	:	FIRST
+	ENDIF
+	DoFind:
+ENDP
+
+PROC CmdN%:										REM File/New %n
+	LOCAL n$(255)
+	
+	n$ = CREATEFILEDIALOG$:(GETDOC$)
+	IF n$ <> ""
+		CreateFile:(n$)
+	ENDIF
+ENDP
+
+PROC CmdO%:										REM File/Open %o
+	LOCAL n$(255)
+	
+	n$ = OPENFILEDIALOG$:(GETDOC$, 0, 0, KUidAppFrame&)
+	IF n$ <> ""
+		OpenFile:(n$)
+	ENDIF
+ENDP
+	
+PROC CmdSC%:									REM File/Close %C
+	CloseFile:
+	DrawScreen:
+ENDP
+
+PROC CmdSG%:									REM Save as %G
+	LOCAL n$(255)
+	IF NotAllowed%:(%G) :RETURN :ENDIF
+	n$ = CREATEFILEDIALOG$:(GETDOC$)
+	IF n$ <> ""
+		gIPRINT "Feature not yet supported"
+		REM Save as n$
+	ENDIF
+ENDP
+
+PROC CmdSH%:										REM Open help map %H
+	LOCAL off%(6), f$(255)
+	f$ = PARSE$("psiMind Help.X", CMD$(1), off%())
+	f$ = LEFT$(f$, LEN(f$) -2)
+	LaunchDocAndWait:(f$)
+ENDP
+
+PROC CmdSJ%:										REM Merge in %J
+	LOCAL n$(255), id&, d%
+	IF NotAllowed%:(%T) :RETURN :ENDIF
+
+	gIPRINT "Feature not yet supported"
+	RETURN	
+
+	n$ = GETDOC$ + ".txt"
+	dINIT "Merge file in"
+	dFILE n$, "File,Folder,Disk", 1 + 16
+	IF mainitem& <> 1
+		dTEXT "", "Merge in to"
+		dBUTTONS "Cancel", -27, "Current item", %c, "Main item", 13
+	ELSE
+		dBUTTONS "Cancel", -27, "Merge in", 13
+	ENDIF
+	d% = DIALOG
+	
+	id& = 1		
+	IF (d% = %c) AND (mainitem& <> 0)
+		id& = mainitem&
+	ELSEIF d% = 0
+		RETURN
+	ENDIF
+	MergeIn:(n$, id&)	
+ENDP
+	
+PROC CmdS%:										REM %s
+	IF NotAllowed%:(%S) :RETURN :ENDIF
+ENDP
+	
+PROC CmdK%:										REM Special/Prefernces %k
+	LOCAL SpellCheck%, PrintTitleBold%, PrintFontSize%
+	LOCAL QuickDataEntry%
+	
+	SpellCheck% = GetBit%:(prefflag%, Kspellcheck%)
+	PrintTitleBold% = GetBit%:(prefflag%, Kprinttitlebold%)
+	PrintFontSize% = (prefflag% AND 3) + 1
+	QuickDataEntry% = GetBit%:(prefflag%, Kquickdataentry%)
+	
+	dINIT "Preferences"
+	dCHECKBOX QuickDataEntry%, "Quick Data Entry mode"
+	#IFDEF SPELL
+		dCHECKBOX SpellCheck%, "Automatically spell check items"
+	#ENDIF
+	dTEXT "", "", $800
+	dCHECKBOX PrintTitleBold%, "Print item title in bold"
+	dCHOICE PrintFontSize%, "Print font size", "8,10,12,14"
+	dCHECKBOX PlainBackground%, "Plain background"
+	dBUTTONS "Cancel", -27, "OK", 13
+	IF DIALOG = 13
+		#IFDEF SPELL
+			prefflag% = SetBit%:(prefflag%, Kspellcheck%, SpellCheck%)
+		#ENDIF
+		PrintFontSize%--
+		prefflag% = SetBit%:(prefflag%, Kprinttitlebold%, PrintTitleBold%)
+		prefflag% = SetBit%:(prefflag%, Kprintfontsize%, GetBit%:(PrintFontSize%, 1))
+		prefflag% = SetBit%:(prefflag%, Kprintfontsize% + 1, GetBit%:(PrintFontSize%, 2))
+		prefflag% = SetBit%:(prefflag%, Kquickdataentry%, QuickDataEntry%)
+		UpdateScreen:
+	ENDIF
+ENDP
+	
+PROC CmdSA%:									REM Special/About %A
+	dINIT "About " + KAppName$ + " " + Kprogramversion$, 8
+	dTEXT "", "Simple mind mapping software for the Psion", 2
+	dTEXT "", "", $800
+	dTEXT "", "Contact: kgolding@cix.co.uk - www.cix.co.uk/~kgolding", 2
+	dTEXT "", "", $800
+	dTEXT "", "Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk", 2
+	dTEXT "", "Distributed under the terms of the GNU General Public Licence", 2
+	dTEXT "", "(GPL) -- see www.gnu.org/licenses/gpl.txt", 2
+	dTEXT "", "", $800
+	dBUTTONS "OK", 13
+	DIALOG
+ENDP
+
+PROC OK2AddChild%:
+	IF NumberChildren%:(mainitem&) < Kuser_children%
+		RETURN -1
+	ELSE
+		dINIT "No more child items allowed"
+		dTEXT "","There is a limited of " + GEN$(Kuser_children%, 3) + " child items per item"
+		dBUTTONS "OK", 13
+		RETURN 0
+	ENDIF
+ENDP
+
+PROC CmdA%:										REM Record/Add %a
+	LOCAL newid&
+	IF NotAllowed%:(%a) :RETURN :ENDIF
+	IF OK2AddChild%:
+		USE A	:	LAST
+		newid& = A.id& + 1
+		INSERT
+		A.id& = newid&
+		IF newid& = 1
+			A.parent& = 0
+		ELSE
+			A.parent& = mainitem&
+		ENDIF
+		EditRecord:("")
+	ENDIF
+ENDP
+	
+PROC CmdSE%:									REM Record/Edit %E
+	IF NotAllowed%:(%E) :RETURN :ENDIF
+	Goto_id%:(mainitem&, -1)
+	MODIFY
+	EditRecord:("")
+ENDP
+
+PROC CmdSZ%:									REM Edit node
+	CmdSE%:
+ENDP
+
+PROC CmdSD%:									REM Record/Delete %D
+	LOCAL numChildren%
+	
+	IF NotAllowed%:(%D) :RETURN :ENDIF
+	
+	IF mainitem& = 1
+		gIPRINT "ERROR - You can not delete the root item"
+		RETURN
+	ENDIF
+	
+	numChildren% = NumberChildren%:(mainitem&)
+	Goto_id%:(mainitem&, -1)
+	dINIT "Delete item?"
+	dTEXT "", A.title$, 2
+	IF numChildren%
+		dTEXT "","This will delete all of its child items as well?"
+	ENDIF
+	dBUTTONS "No", -(%n + $300), "Yes", %y + $300
+	
+	IF DIALOG = %y
+		DeleteAll:(mainitem&)
+		mainitem& = gui_id&(1)
+		gui_lastid& = 1
+		UpdateScreen:
+	ENDIF
+ENDP
+	
+PROC CmdSU%:									REM Page setup %U
+	ONERR PageSetupError
+	PAGESETUPDIALOG:
+	RETURN
+PageSetupError::
+	ONERR OFF
+	gIPRINT ERR$(ERR)
+ENDP
+	
+PROC CmdSP%:									REM Print setup %P
+	ONERR PrintSetupError::
+	PRINTRANGEDIALOG:
+	ONERR OFF
+	RETURN
+PrintSetupError::
+	ONERR OFF
+	gIPRINT ERR$(ERR)
+ENDP
+
+PROC CmdST%:									REM Export as text %T
+	LOCAL n$(255), id&, d%
+	IF NotAllowed%:(%T) :RETURN :ENDIF
+
+	n$ = GETDOC$ + ".txt"
+	dINIT "Export as text"
+	dFILE n$, "File,Folder,Disk", 1 + 16
+	dTEXT "", "", $800
+	dCHOICE ExportFormat%, "Export format", "Plain,Numbered,Numbered/Letters,Roman,HTML"
+	IF mainitem& <> 1
+		dBUTTONS "Cancel", -27, "Current branch", %c, "Entire file", 13
+	ELSE
+		dBUTTONS "Cancel", -27, "Export", 13
+	ENDIF
+	d% = DIALOG
+	
+	id& = 1		
+	IF (d% = %c) AND (mainitem& <> 0)
+		id& = mainitem&
+	ELSEIF d% = 0
+		RETURN
+	ENDIF
+	ExportAsText:(n$, id&)
+ENDP
+
+PROC CmdSV%:									REM Print preview %V
+	AppPrint:
+	ONERR PrintPreviewError
+	PRINTPREVIEWDIALOG:
+	ONERR OFF
+	RETURN
+PrintPreviewError::
+	ONERR OFF
+	gIPRINT ERR$(ERR)
+ENDP
+	
+PROC CmdP%:										REM Print %p
+	AppPrint:
+	ONERR PrintError
+	PRINTDIALOG:
+	ONERR OFF
+	RETURN
+PrintError::
+	ONERR OFF
+	gIPRINT ERR$(ERR)
+ENDP
+
+PROC CmdQ%:
+	IF NotAllowed%:(%q) :RETURN :ENDIF
+REM	ViewItem:
+ENDP
+
+PROC CmdX%:										REM Edit/Cut %x
+	IF NotAllowed%:(%x) :RETURN :ENDIF
+	gIPRINT "Marked"
+	markeditem& = mainitem&
+ENDP
+	
+PROC CmdC%:										REM Edit/Copy %c
+	IF NotAllowed%:(%c) :RETURN :ENDIF
+	
+ENDP
+	
+PROC CmdV%:										REM Edit/Paste %v
+	IF NotAllowed%:(%v) :RETURN :ENDIF
+	IF OK2AddChild%:
+		MoveItems:(markeditem&, mainitem&)
+	ENDIF
+ENDP
+	
+PROC CmdM%:										REM Zoom in %m
+	Zoom:(1)
+ENDP
+	
+PROC CmdSM%:									REM Zoom out %M
+	Zoom:(-1)
+ENDP
+	
+PROC CmdT%:										REM Toolbar on/off %t
+	IF tbVis%
+		tBarHide:
+		maxwidth% = fullscreenwidth%
+	ELSE
+		tBarShow:
+		maxwidth% = fullscreenwidth% - tbWidth%
+	ENDIF
+	DrawScreen:
+ENDP
+
+PROC EditRecordTitle:(keyboard$)		REM User dialog to edit title of record
+	LOCAL title$(KtitleLength), d%
+	LOCAL threadid&, temp&, note&(65)
+
+	IF keyboard$ <> ""
+		threadid& = GetThreadIDFromAppUid&:(KUidAppFrame&, temp&)
+		SendKeyEventToApp&:(threadid&, 0, 4099, KModifierCtrl&, 0, 0)
+		title$ = keyboard$
+	ELSE
+		title$ = A.title$
+	ENDIF
+
+EditTitleDialog::
+	dINIT "Add/Edit Record Title", 1 rem + 4
+	dEDIT title$, "Title", 28
+	dBUTTONS "Cancel", -27, "Save", 13
+	d% = DIALOG
+	IF d% = 13
+		IF title$ = ""
+			gIPRINT "The title can not be blank"
+			GOTO EditTitleDialog
+		ENDIF
+
+		#IFDEF SPELL
+		IF GetBit%:(prefflag%, Kspellcheck%)
+			title$ = LEFT$(SpellCheck$:(title$), KtitleLength)
+		ENDIF
+		#ENDIF
+		A.title$ = title$
+		PUT
+	
+		UpdateScreen:
+	ELSE
+		CANCEL
+	ENDIF
+	
+ENDP
+
+PROC EditRecord:(keyboard$)					REM User dialog to edit record
+	LOCAL title$(KtitleLength), d%, note$(255)
+	LOCAL threadid&, temp&, note&(65)
+
+	IF keyboard$ <> ""
+		threadid& = GetThreadIDFromAppUid&:(KUidAppFrame&, temp&)
+		SendKeyEventToApp&:(threadid&, 0, 4099, KModifierCtrl&, 0, 0)
+		title$ = keyboard$
+	ELSE
+		title$ = A.title$
+	ENDIF
+	IF GetBit%:(A.flags%, Khas_note%)
+		note$ = GetOptData$:(A.id&, "Note")
+	ENDIF
+	CopyStringToBuffer:(note$, ADDR(note&()))
+
+	EditDialog::
+	dINIT "Add/Edit Record", 1 + 4
+	dEDIT title$, "Title", 30
+	dEDITMULTI ADDR(note&()), "Notes", 30, 5, 230
+	dBUTTONS "Cancel", -27, "Save", %s
+	d% = DIALOG
+	IF d% = %s
+		IF title$ = ""
+			gIPRINT "The title can not be blank"
+			GOTO EditDialog
+		ENDIF
+		note$ = CopyBufferToString$:(ADDR(note&()))
+		#IFDEF SPELL
+		IF GetBit%:(prefflag%, Kspellcheck%)
+			title$ = LEFT$(SpellCheck$:(title$), KtitleLength)
+			note$ = SpellCheck$:(note$)
+		ENDIF
+		#ENDIF
+		A.title$ = title$
+		A.flags% = SetBit%:(A.flags%, Khas_note%, (note$ <> ""))
+		PUT
+	
+		SetOptData:(A.id&, "Note", note$)
+		
+		UpdateScreen:
+	ELSE
+		CANCEL
+	ENDIF
+ENDP
+	
+PROC DoSetCmd:								REM Set up user commands
+REM This is called at the start of the program, after each call to
+REM a "Cmd" procedure, and whenever the data file changes
+	cmdN$ = KcmdN$							REM Enable standard commands
+	cmdS$ = KcmdS$
+	IF fopen%										REM If file is open then allow
+		cmdN$ = cmdN$ + "qpcxv"		REM Print/Cut/Copy/Paste/File Info
+		cmdS$ = cmdS$ + "cupvtji"	REM Close/Page setup/Print setup/Print preview/Export as text/Merge in
+		
+		cmdN$ = cmdN$ + "alf"			REM Add, Find, Attach file
+		cmdS$ = cmdS$ + "edl"			REM Edit, Delete, Launch file
+
+		IF findtext$ <> ""
+			cmdN$ = cmdN$ + "j"			REM Find Next
+		ENDIF
+	ENDIF
+ENDP
+	
+PROC DoMenu:									REM Display users Menu
+	mINIT
+	mCASC "Printing", "Page setup...", m%:(%U), "Print setup...", m%:(%P), "Print preview...", m%:(%V), "Print...", m%:(%p)
+REM	mCASC "More", "Export as text...", m%:(%T), "Merge in", m%:(%J)
+	mCARD "File", "New...", %n, "Open...", %o, "Close file", -m%:(%C), "Info", -m%:(%I), "Printing>", 16, "Export as text...", -m%:(%T), "Close", %e
+	mCARD "Edit", "Cut", m%:(%x), "Copy", m%:(%c), "Paste", -m%:(%v), "Find", m%:(%f), "Find Next", m%:(%j)
+	mCARD "View", "Zoom in", %m, "Zoom out", -%M, "Toolbar", %t OR tbMenuSym%
+	REM mCARD "Record", "Add...", m%:(%a), "Edit...", m%:(%E), "Delete...", -m%:(%D), "Preview item note", m%:(%q), "Launch file", m%:(%l), "Attach/remove file...", m%:(%L)
+	mCARD "Record", "Add...", m%:(%a), "Edit...", m%:(%E), "Delete...", -m%:(%D), "Launch file", m%:(%l), "Attach/remove file...", m%:(%L)
+	mCARD "Special", "Preferences...", %k, "Open help map", %H, "About...", %A
+	DoCommandKey:(MENU(minit%))
+ENDP
+	
+PROC KeyPressed:(k%, shift%)	REM Deal with direct (non ctrl) keys
+	LOCAL k$(1), newid&
+REM	gIPRINT GEN$(k%, 5)
+	IF fopen%
+		IF (k% = 4098) OR (k% = 32)		REM Home
+			IF mainitem& > 1
+				gui_lastid& = mainitem&
+				mainitem& = 1
+				UpdateScreen:
+			ELSE
+				gIPRINT "You are already at root item!"
+			ENDIF
+		ELSEIF k% = 27		REM Escape
+				IF mainitem& <> gui_lastid&
+					newid& = mainitem&
+					mainitem& = gui_lastid&
+					gui_lastid& = newid&
+					UpdateScreen:
+				ENDIF
+		ELSEIF (k% = 8) OR (k% = 4103)		REM Del / Left arrow
+			IF mainitem& > 1
+				Goto_id%:(mainitem&, -1)
+				gui_lastid& = mainitem&
+				mainitem& = A.parent&
+				UpdateScreen:
+			ELSE
+				gIPRINT "You are already at root item!"
+			ENDIF
+		ELSEIF (k% = 13)									REM Enter
+			CmdSE%:
+		ELSEIF (k% = 9)										REM Tab
+			CmdL%:
+		ELSE
+			k$ = CHR$(k%)
+			IF (k$ > " ") AND (k% < 128)
+				IF OK2AddChild%:
+					USE A	:	LAST
+					newid& = A.id& + 1
+					INSERT
+					A.id& = newid&
+					A.parent& = mainitem&
+					IF GetBit%:(prefflag%, Kquickdataentry%)
+						EditRecordTitle:(k$)
+					ELSE
+						EditRecord:(k$)
+					ENDIF
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+ENDP
+
+PROC PenDown:(wid%, x%, y%)		REM Pen Down
+	IF wid% = 1
+	ENDIF
+ENDP
+	
+PROC PenUp:(wid%, x%, y%)			REM Pen Up
+	LOCAL i%
+	
+	IF wid% = 1
+		i% = 1
+		WHILE i% <= gui_counter%
+			IF (x% >= gui_x1%(i%)) AND (x% <= gui_x2%(i%))
+				IF (y% >= gui_y1%(i%)) AND (y% <= gui_y2%(i%))
+					IF mainitem& = gui_id&(i%)
+						CmdSE%:
+					ELSE
+						gui_lastid& = mainitem&
+						mainitem& = gui_id&(i%)
+						UpdateScreen:
+					ENDIF
+					BREAK
+				ENDIF
+			ENDIF
+			i%++
+		ENDWH
+	ENDIF
+ENDP
+
+PROC Squared&:(a%)
+	RETURN INT(a%) * INT(a%)
+ENDP
+
+PROC PenDrag:(wid%, x%, y%)		REM Pen Dragged
+	IF wid% = 1
+	ENDIF
+ENDP
+	
+PROC AppGotFocus:							REM Application has got focus
+ENDP
+	
+PROC AppLostFocus:						REM Application has lost focus
+ENDP
+	
+PROC MachineOn:								REM Machine turned on
+ENDP
+	
+PROC DoCutCopyPaste:					REM Sidebar menu cut/copy/paste
+	LOCAL ret%
+	ret% = mPOPUP(5, 40, 0, "Cut", m%:(%x), "Copy", m%:(%c), "Paste", m%:(%v))
+	IF ret% <> 0
+		DoCommandKey:(ret%)
+	ENDIF
+ENDP
+	
+PROC DoIRTxRx:								REM Sidebar menu infrared send/receive
+	LOCAL ret%
+	REM Take out the "+ $1000" to enable send/receive
+	ret% = mPOPUP(5, 90, 0, "Infrared send", 1 + $1000, "Infrared receive", 2 + $1000)
+	IF ret% = 1
+		REM Do Infrared Send
+	ELSEIF ret% = 2
+		REM Do Infrared Recieve
+	ENDIF
+ENDP
+
+PROC ZoomTo:(i%)
+	LOCAL i&(48)
+	
+	gFONT zoomfont&(i%)
+	gINFO32 i&()
+	fontheight% = i&(3) + i&(4)		REM Set global total height off font
+	fontdescent% = i&(4)					REM Set global descent off font
+ENDP
+
+PROC Zoom:(by%)								REM Zoom in/out
+	zoomlevel% = zoomlevel% + by%
+	IF zoomlevel% < 3
+		zoomlevel% = Kzoommax%
+	ELSEIF zoomlevel% > Kzoommax%
+		zoomlevel% = 3
+	ENDIF
+	ZoomTo:(zoomlevel%)
+	DrawScreen:
+ENDP
+	
+PROC CreateFile:(f$)						REM Create users data file
+	LOCAL off%(6), dbkey&, index%
+	
+	CloseFile:
+	TRAP DELETE f$
+rem	ONERR ErrCreateFile
+	SETDOC f$
+	
+	REM Create file here
+	CREATE """" + f$ + """ FIELDS id,parent,title(" + GEN$(KtitleLength, 3) + "),flags TO items", A, id&, parent&, title$, flags%
+
+	REM Add root item
+	PARSE$("*.*", f$, off%())
+	INSERT
+	A.id& = &1
+	A.parent& = &0
+	A.title$ = MID$(f$, off%(4), 255)
+	PUT
+	CLOSE
+	
+	REM Add index
+	dbkey& = DBNEWKEY&:
+	DBADDFIELD:(dbkey&, "id", 1)
+	DBCREATEINDEX:("idindex", dbkey&, f$, "items")
+		
+	REM Create optional data table
+	CREATE """" + f$ + """ FIELDS id,type(12),data(240) TO data", B, id&, type$, data$
+	INSERT			REM Created by version
+	B.id& = 0
+	B.type$ = "ProgVer"
+	B.data$ = Kprogramversion$
+	PUT
+	INSERT			REM default ExportFormat
+	B.id& = 0
+	B.type$ = "ExFormat"
+	B.data$ = "2"	REM Numbered
+	PUT
+	INSERT			REM Index flag
+	B.id& = 0
+	B.type$ = "Indexed"
+	B.data$ = "1"
+	PUT
+	CLOSE
+
+	OpenFile:(f$)
+	
+rem	fopen% = KTrue%
+rem	fname$ = f$
+rem	UpdateToolBar:
+rem	UpdateScreen:
+	RETURN
+ErrCreateFile::
+	ONERR OFF
+	ALERT("Error creating '"+ f$ + "'", ERR$(ERR) + " (" + GEN$(ERR, 5) + ")")
+rem	SETDOC ""
+	UpdateToolBar:
+	UpdateScreen:
+ENDP
+	
+PROC OpenFile:(f$)							REM Open users data file
+	CloseFile:
+	ONERR ErrOpenFile
+	
+	REM Open file here
+	OPEN """" + f$ + """ SELECT * FROM items", A, id&, parent&, title$, flags%
+	
+	ONERR OFF
+	SETDOC f$
+	fopen% = KTrue%
+	fname$ = f$
+
+	REM Get any optional data
+	ONERR ErrBadData
+	FileHasIndex% = (GetOptData$:(&0, "Indexed") = "1")
+	ExportFormat% = VAL(GetOptData$:(&0, "ExFormat"))
+ErrBadData::
+	ONERR OFF
+	
+	UpdateToolBar:
+	UpdateScreen:
+	RETURN
+ErrOpenFile::
+	ONERR OFF
+	IF ERR <> KErrInUse%			REM Gets around R type System commands problems
+		ALERT("Error opening '"+ f$ + "'", ERR$(ERR) + " (" + GEN$(ERR, 5) + ")")
+	ENDIF
+	UpdateToolBar:
+	UpdateScreen:
+ENDP
+	
+PROC CloseFile:									REM Close file, even if not open!
+	IF NOT(fopen%) :RETURN :ENDIF
+	USE A
+	CLOSE
+	
+	REM Save any optional data
+	OPEN """" + fname$ + """ SELECT * FROM data", A, id&, type$, data$
+	IF FINDFIELD("ExFormat", 1, 1, 3)
+		MODIFY
+	ELSE
+		INSERT
+		A.type$ = "ExFormat"
+		A.id& = 0
+	ENDIF
+	A.data$ = GEN$(ExportFormat%, 1)
+	PUT
+	CLOSE
+
+	fopen% = KFalse%
+	fname$ = ""
+	mainitem& = 0
+	gui_lastid& = 0
+	UpdateToolBar:
+ENDP
+	
+PROC ReadIniFile:								REM Get ini file settings
+	LOCAL name$(255), off%(6)
+	name$ = PARSE$(".ini", CMD$(1), off%())
+	ONERR ErrReadIniFile
+	OPEN """" + name$ + """", I, lastusedfile$, zoomlevel%, tbVis%, username$, regcode&, prefflag%, PlainBackground%
+	fname$ = I.lastusedfile$
+	zoomlevel% = I.zoomlevel%
+	tbVis% = I.tbVis%
+	username$ = I.username$
+	regcode& = I.regcode&
+	prefflag% = I.prefflag%
+	PlainBackground% = I.PlainBackground%
+	CLOSE
+ErrReadIniFile::
+	REM Ignore error and don't use ini file settings!
+	ONERR OFF
+ENDP
+	
+PROC WriteIniFile:							REM Save ini file settings
+	LOCAL name$(255), off%(6)
+	
+	name$ = PARSE$(".ini", CMD$(1), off%())
+	TRAP DELETE name$
+	CREATE """" + name$ + """", I, lastusedfile$, zoomlevel%, tbVis%, username$, regcode&, prefflag%, PlainBackground%
+	INSERT
+	I.lastusedfile$ = fname$
+	I.zoomlevel% = zoomlevel%
+	I.tbVis% = tbVis%
+	I.username$ = username$
+	I.regcode& = regcode&
+	I.prefflag% = prefflag%
+	I.PlainBackground% = PlainBackground%
+	PUT
+	CLOSE
+ENDP
+
+PROC OpenOwnMap:
+	LOCAL off%(6), f$(250)
+	
+	f$ = PARSE$("psiMind Help.A", CMD$(1), off%())
+	f$ = LEFT$(f$, LEN(f$) - 2)
+
+	IF EXIST(f$)
+		OpenFile:(f$)
+		RETURN -1
+	ELSE
+		RETURN 0
+	ENDIF
+ENDP
+
+PROC SystemEvent:(s$)						REM Deal with system event
+	LOCAL a$(1), off%(6)
+
+	a$ = LEFT$(s$, 1)
+	IF a$ = "C"
+		CreateFile:(MID$(s$, 2, 255))
+	ELSEIF a$ = "O"
+		OpenFile:(MID$(s$, 2, 255))
+	ELSEIF a$ = "R"
+		IF EXIST(MID$(s$, 2, 255))
+			OpenFile:(MID$(s$, 2, 255))
+		ELSEIF EXIST(fname$)
+			OpenFile:(fname$)
+		ELSE
+			REM gIPRINT "Could not open last file"
+			IF NOT OpenOwnMap:
+				CmdN%:											REM Offer to create new
+			ENDIF
+		ENDIF
+	ELSEIF a$ = "X"
+		exit% = KTrue%
+	ENDIF
+ENDP
+	
+PROC AppRun:											REM The main event handling loop
+	LOCAL k%, shift%
+	LOCAL w%, x%, y%
+	
+	DO
+		LOCK OFF
+		GETEVENT32 ev&()
+		IF (ev&(1) = $406) OR (ev&(1) = $407) OR (ev&(1) = $409) OR (ev&(1) = $40A)
+			REM Throw away keydown & keyup, pen enter/exit contact
+			CONTINUE
+		ENDIF
+		LOCK  ON
+		IF (ev&(1) AND $400) = 0			REM Keyboard event
+			k% = ev&(1)
+			shift% = (ev&(4) AND 2)
+			IF k% = KKeyMenu%
+				DoMenu:
+			ELSEIF (ev&(4) AND 4) = 4		REM Ctrl key
+				DoCommandKey:(96 + k% - shift% * 16)
+			ELSE												REM Normal key
+				KeyPressed:(k%, shift%)
+			ENDIF
+		ELSEIF ev&(1) = $408					REM Pen event
+			IF tBarOffer%:(ev&(3), ev&(4), ev&(6), ev&(7))
+				DoSetCmd:
+				CONTINUE
+			ELSE
+				ONERR ErrPenEvent
+				w% = ev&(3)
+				x% = ev&(6)
+				y% = ev&(7)
+				IF ev&(4) = 0							REM Pen Down
+					PenDown:(w%, x%, y%)
+				ELSEIF ev&(4) = 1					REM Pen Up
+					PenUp:(w%, x%, y%)
+				ELSEIF ev&(4) = 6					REM Pen Dragged
+					PenDrag:(w%, x%, y%)
+				ENDIF
+				ErrPenEvent::
+				ONERR OFF
+			ENDIF
+		ELSEIF ev&(1) = 10000					REM SidebarMenu
+			DoMenu:
+		ELSEIF ev&(1) = 10001					REM Cut/Copy/Paste
+			DoCutCopyPaste:
+		ELSEIF ev&(1) = 10002					REM IR Rx/Tx
+			DoIRTxRx:
+		ELSEIF ev&(1) = 10003					REM Zoom out
+			DoCommandKey:(%m)
+		ELSEIF ev&(1) = 10004					REM Zoom in
+			DoCommandKey:(%M)
+		ELSEIF ev&(1) = $401					REM App got focus
+			AppGotFocus:
+		ELSEIF ev&(1) = $402					REM App lost focus
+			AppLostFocus:
+		ELSEIF ev&(1) = $403					REM Machine switched on
+			MachineOn:
+		ELSEIF ev&(1) = $404					REM System event
+			SystemEvent:(GETCMD$)
+		ELSE 													REM Unknown event
+			gIPRINT "Unknown event " + GEN$(ev&(1), 8) + ", " + GEN$(ev&(2), 8) + ", " + GEN$(ev&(3), 8)
+		ENDIF
+	UNTIL exit%
+ENDP
+	
+PROC DoCommandKey:(k%)						REM Calls PROC's as required
+	LOCAL k$(1)
+	
+	k$ = CHR$(k%)
+	IF k$ > "Z"
+		IF LOC(cmdN$, k$)
+			@%("Cmd" + k$):
+			DoSetCmd:
+		ENDIF
+	ELSE
+		IF LOC(cmdS$, k$)
+			@%("CmdS" + k$):
+			DoSetCmd:
+		ENDIF
+	ENDIF
+ENDP
+	
+PROC NotAllowed%:(k%)						REM Returns true if command allowed
+	IF ((k% <= ASC("Z")) AND LOC(cmdS$, CHR$(k%))) OR ((k% >= ASC("a")) AND LOC(cmdN$, CHR$(k%)))
+		RETURN KFalse%
+	ELSE
+		gIPRINT "This item is not available", KBusyTopRight%
+		RETURN KTrue%
+	ENDIF
+ENDP
+	
+PROC m%:(k%)										REM Returns menu item dimmed if applicable
+	IF ((k% <= ASC("Z")) AND LOC(cmdS$, CHR$(k%))) OR ((k% >= ASC("a")) AND LOC(cmdN$, CHR$(k%)))
+		RETURN k%
+	ELSE
+		RETURN k% OR $1000
+	ENDIF
+ENDP
+	
+
+PROC Initialize:
+	LOCAL btnbitmap&(8), off%(6)
+	LOCAL btnbitmap$(255)
+	
+	SETCOMPUTEMODE:(KComputeModeOff&)	REM Give me speed, I'm a good program
+	SETFLAGS 2						REM Enable auto compact of db
+	fopen% = KFalse%									REM No file open
+	redraw% = KFalse%									REM Switch off screen drawing whilst init.
+	fullscreenwidth% = gWIDTH					REM Before default window changes
+	fullscreenheight% = gHEIGHT				REM As above
+	mainitem& = 1
+	gui_lastid& = 1
+	
+	PlainBackground% = 0
+	
+	prefflag% = $EFFF	REM All preference set to ON
+	
+	zoomlevel% = 4										REM Set zoom to middle
+	zoomfont&(1) = KFontTiny4&				REM Zoom font sizes
+	zoomfont&(2) = KFontArialNormal8&
+	zoomfont&(3) = KFontArialNormal11&
+	zoomfont&(4) = KFontArialNormal13&
+	zoomfont&(5) = KFontArialNormal15&
+	zoomfont&(6) = KFontArialNormal18&
+	zoomfont&(7) = KFontArialNormal22&
+	
+	IF IsColorMachine%:										REM Create blank bitmap
+		blankbitmap& = gCREATEBIT(0, KblankbitmapWidth%, $5)
+	ELSE
+		blankbitmap& = gCREATEBIT(0, KblankbitmapWidth%, $2)
+	ENDIF
+	
+	btnbitmap$ = PARSE$(".mbm", CMD$(1), off%())
+	IF EXIST(btnbitmap$)
+		btnbitmap&(1) = gLoadBit(btnbitmap$, 0, 0)
+		btnbitmap&(2) = gLoadBit(btnbitmap$, 0, 1)
+		btnbitmap&(3) = gLoadBit(btnbitmap$, 0, 2)
+		btnbitmap&(4) = gLoadBit(btnbitmap$, 0, 3)
+		btnbitmap&(5) = gLoadBit(btnbitmap$, 0, 4)
+		btnbitmap&(6) = gLoadBit(btnbitmap$, 0, 5)
+		btnbitmap&(7) = gLoadBit(btnbitmap$, 0, 6)
+		btnbitmap&(8) = gLoadBit(btnbitmap$, 0, 7)
+	ELSE
+		btnbitmap&(1) = blankbitmap&
+		btnbitmap&(2) = blankbitmap&
+		btnbitmap&(3) = blankbitmap&
+		btnbitmap&(4) = blankbitmap&
+		btnbitmap&(5) = blankbitmap&
+		btnbitmap&(6) = blankbitmap&
+		btnbitmap&(7) = blankbitmap&
+		btnbitmap&(8) = blankbitmap&
+	ENDIF
+	
+	gUSE 1																REM Switch back to screen
+	tBarInit:(KAppName$, gWIDTH, gHEIGHT)
+	tBarButt:("a", 1, "Add" + CHR$(10) + "New", 0, btnbitmap&(1), btnbitmap&(2), 0)
+	tBarButt:("E", 2, "Edit", 0, btnbitmap&(3), btnbitmap&(4), 0)
+	tBarButt:("f", 3, "Find", 0, btnbitmap&(5), btnbitmap&(6), 0)
+	tBarButt:("j", 4, "Find" + CHR$(10) + "Next", 0, btnbitmap&(7), btnbitmap&(8), 0)
+	
+	tbVis% = -1												REM Set toolbar visible by default
+	ReadIniFile:											REM Get ini file settings
+	
+	tbVis% = NOT tbVis%								REM Update toolbar
+	CmdT%:
+		
+	redraw% = KTrue%									REM Switch screen redrawing on
+	Zoom:(0)													REM Set font for zoom level	& draw screen
+ENDP
+	
+PROC CopyStringToBuffer:(s$, buff&)
+	LOCAL i%
+	
+	POKEL buff&, LEN(s$)
+	WHILE i% < LEN(s$)
+		POKEB buff& + 4 + i%, ASC(MID$(s$, i% + 1, 1))
+		i% = i% + 1
+	ENDWH
+ENDP
+	
+PROC CopyBufferToString$:(buff&)
+	LOCAL i%, ret$(255), retaddr&
+	
+	IF (PEEKL(buff&) < 0) OR (PEEKL(buff&) > 255)
+		RAISE -1
+	ENDIF
+	WHILE i% < PEEKL(buff&)
+		ret$ = ret$ + CHR$(PEEKB(buff& + 4 + i%))
+		i% = i% + 1
+	ENDWH
+	RETURN ret$
+ENDP
+	
+PROC PrintMultiLine:(string$, maxwidth%, maxheight%)
+	LOCAL p%, s$(255), x%, y%
+	
+	x% = gX											REM Store current X, Y
+	y% = gY
+	s$ = string$
+	WHILE (s$ <> "") AND (gY < (y% + maxheight% - fontheight%))
+		p% = gPRINTCLIP(s$, maxwidth%)
+		s$ = MID$(s$, p% + 1, 255)
+		gAT x%, gY + fontheight%
+	ENDWH			
+ENDP
+	
+PROC IsColorMachine%:
+	local cinfo&(7)
+	
+	ONERR cerror
+	GCOLORINFO cinfo&()
+	IF cinfo&(2)									REM number of colours
+		RETURN -1 									REM colour screen
+	ENDIF
+	RETURN 0 											REM no colour
+	
+	cerror::
+	ONERR off
+	IF err= -96
+		RETURN 0 											REM no colour
+	ENDIF
+	RAISE ERR
+ENDP
+
+#INCLUDE "gui.opl"
+#INCLUDE "data.opl"
+#INCLUDE "BitOps.opl"
+#INCLUDE "LaunchDoc.opl"
+#INCLUDE "UpdateFileVersion.opl"
+
+#IFDEF SPELL
+#INCLUDE "SpellCheck.opl"
+#ENDIF

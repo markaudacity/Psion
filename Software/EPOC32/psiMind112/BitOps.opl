@@ -1,0 +1,46 @@
+REM Copyright (C) UK 2002 Kevin Golding - kgolding@cix.co.uk
+REM Distributed under the terms of the GNU General Public Licence
+REM (GPL) -- see www.gnu.org/licenses/gpl.txt
+
+REM SetBit%:(flag%, bit%, value%)
+REM Sets the n'th bit of flag% if value% = true, else clears
+REM the n'th bit, where n = bit% (1-15)
+REM And returns the new flag value
+REM e.g. myflag% = SetBit%:(myflag%, 2, -1)
+REM
+PROC SetBit%:(flag%, bit%, value%)
+	LOCAL mask&
+	
+	IF (bit% < 1) OR (bit% > 15)
+		RAISE -1
+	ELSEIF bit% <= 2
+		mask& = bit%
+	ELSE
+		mask& = &2 ** (bit% - 1)
+	ENDIF
+	
+	IF value%			REM Set bit
+		RETURN flag% OR mask&
+	ELSE					REM Clear bit
+		RETURN flag% AND XOR&:(mask&, $FFFF)
+	ENDIF
+ENDP
+
+REM GetBit%:(flag%, bit%)
+REM Returns true if the n'th bit of flag% is set, or
+REM false if it isn't, where n = bit% (1-15)
+REM e.g. IF GetBit%:(myflag%, 2)
+REM
+PROC GetBit%:(flag%, bit%)
+	LOCAL mask&
+	
+	IF (bit% < 1) OR (bit% > 15)
+		RAISE -1
+	ELSEIF bit% <= 2
+		mask& = bit%
+	ELSE
+		mask& = &2 ** (bit% - 1)
+	ENDIF
+	
+	RETURN (flag% AND mask&) = mask&
+ENDP
